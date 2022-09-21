@@ -138,8 +138,12 @@ class Venice:
         - the default dataset is particles, but channels can be built between any
             Particles or Grid datasets
         - by default all properties are copied, but these can be set to any subset
-        - add_iterable_channels functions similarly, but for datasets that are
-            iterated over (e.g. via the itergrids function in AMR codes)
+        - add_iterable_channels and add_dynamic_iterable_channels function
+            similarly, but for datasets that are iterated over (e.g. via the
+            itergrids function in AMR codes). Note that add_iterable_channels adds
+            a static set of channels, so is unsuited for codes with e.g. a dynamic
+            set of grids. add_dynamic_iterable_grids makes channels when called,
+            this is slower but can be used if the set of grids changes. 
 
     Bells & Whistles
     - Define kick functions
@@ -155,8 +159,10 @@ class Venice:
         - sync_data functions must be of the form sync_data(code i, code j)
         - this concerns e.g. added/removed particles and (de)refined grids
     - Define timestep updaters
-        - update_timestep(code i, code j) compute the coupling timestep of 
-            codes i and j during evolution, must return a scalar with units of time
+        - update_timestep[i][j] computes the coupling timestep of codes i and j
+          during evolution, must return a scalar with units of time
+        - update_timestep functions must be of the form update_timestep(code i,
+          code j, previous time step)
         - the tree will be updated to accomodate the new timesteps
     '''
 
@@ -206,7 +212,7 @@ class Venice:
                   if self.update_timestep[code_id1][code_id2] is not None:
                       self.timestep_matrix[code_id1, code_id2] = \
                           self.update_timestep[code_id1][code_id2](
-                              self.codes[code_id1], self.codes[code_id2])
+                              self.codes[code_id1], self.codes[code_id2], dt)
 
 
             # UPDATE CC TREE
@@ -220,8 +226,8 @@ class Venice:
                 for code_id in child1.code_ids:
                     for child2 in node.children:
                         if child1 != child2:
-                            self._sync_data_code_to_codes(code_id, child2.code_ids)
-                            self._copy_code_to_codes(code_id, child2.code_ids) # !!!
+                            self._sync_code_to_codes(code_id, child2.code_ids)
+                            self._copy_code_to_codes(code_id, child2.code_ids)
 
 
         # KICK
@@ -233,8 +239,8 @@ class Venice:
                         if self.kick[code_id1][code_id2] is not None:
                             self.kick[code_id1][code_id2](self.codes[code_id1],
                                 self.codes[code_id2], dt/2.)
-                            self._sync_data_code_to_codes(code_id2, node.code_ids)
-                            self._copy_code_to_codes(code_id2, node.code_ids) # !!!
+                            self._sync_code_to_codes(code_id2, node.code_ids)
+                            self._copy_code_to_codes(code_id2, node.code_ids)
 
 
         # DRIFT
@@ -258,8 +264,8 @@ class Venice:
                         if self.kick[code_id1][code_id2] is not None:
                             self.kick[code_id1][code_id2](self.codes[code_id1],
                                 self.codes[code_id2], dt/2.)
-                            self._sync_data_code_to_codes(code_id2, node.code_ids)
-                            self._copy_code_to_codes(code_id2, node.code_ids) # !!!
+                            self._sync_code_to_codes(code_id2, node.code_ids)
+                            self._copy_code_to_codes(code_id2, node.code_ids)
 
 
         # RECURSIVE EVOLUTION
@@ -269,8 +275,8 @@ class Venice:
                 for code_id in child1.code_ids:
                     for child2 in node.children:
                         if child1 != child2:
-                            self._sync_data_code_to_codes(code_id, child2.code_ids)
-                            self._copy_code_to_codes(code_id, child2.code_ids) # !!!
+                            self._sync_code_to_codes(code_id, child2.code_ids)
+                            self._copy_code_to_codes(code_id, child2.code_ids)
 
 
     def _evolve_interlaced (self, code_ids, dt):
@@ -301,17 +307,17 @@ class Venice:
 
             self._evolve_interlaced(code_ids1, dt/2.)
             for code_id in code_ids1:
-                self._sync_data_code_to_codes(code_id, code_ids2)
+                self._sync_code_to_codes(code_id, code_ids2)
                 self._copy_code_to_codes(code_id, code_ids2)
 
             self._evolve_interlaced(code_ids2, dt)
             for code_id in code_ids2:
-                self._sync_data_code_to_codes(code_id, code_ids1)
+                self._sync_code_to_codes(code_id, code_ids1)
                 self._copy_code_to_codes(code_id, code_ids1)
 
             self._evolve_interlaced(code_ids1, dt/2.)
             for code_id in code_ids1:
-                self._sync_data_code_to_codes(code_id, code_ids2)
+                self._sync_code_to_codes(code_id, code_ids2)
                 self._copy_code_to_codes(code_id, code_ids2)
 
 
@@ -331,6 +337,7 @@ class Venice:
                     a=code_id, b=dt.value_in(units.kyr)))
 
             self.codes[code_id].evolve_model( self.codes[code_id].model_time + dt )
+            self._sync_code_to_codes(code_id, code_ids)
             self._copy_code_to_codes(code_id, code_ids)
 
 
@@ -350,7 +357,7 @@ class Venice:
                 channel.copy()
 
 
-    def _sync_data_code_to_codes (self, from_code_id, to_code_ids):
+    def _sync_code_to_codes (self, from_code_id, to_code_ids):
         '''
         Synchronize data from one code to a list of codes
 
@@ -390,6 +397,8 @@ class Venice:
         '''
         Add channels from one code's iterable datasets to another code's iterable 
         datasets
+        Use only if the set of grids doesn't vary, use add_dynamic_iterable_channels
+        instead, but that method is slower!
 
         from_code: Venice code id of code to copy from (int)
         to_code: Venice code id of code to copy to (int)
@@ -406,6 +415,31 @@ class Venice:
             self._channels[from_code_id][to_code_id].append(
                 from_grid.new_channel_to(to_grid, 
                 attributes=from_attributes, target_names=to_attributes)
+            )
+
+
+    def add_dynamic_iterable_channels (self, from_code_id, to_code_id,
+            from_iterator='itergrids', to_iterator='itergrids',
+            from_attributes=None, to_attributes=None):
+        '''
+        Add a dynamic channel generator and copier from one code's iterable
+        datasets to another code's iterable datasets
+        Use over add_iterable_channels when the set of iterable grids can vary,
+        but this method is slower
+
+        from_code: Venice code id of code to copy from (int)
+        to_code: Venice code id of code to copy to (int)
+        from_iterator: dataset iterator to copy from (string)
+        to_iterator: dataset iterator to copy to (string)
+        from_attributes: list of attributes to copy from code (list of strings)
+        to_attributes: list of attributes to copy to code (list of strings)
+        '''
+
+        self._channels[from_code_id][to_code_id].append(
+            DynamicIterableChannel(
+                getattr(self.codes[from_code_id], from_iterator),
+                getattr(self.codes[to_code_id], to_iterator),
+                from_attributes=from_attributes, to_attributes=to_attributes)
             )
 
 
@@ -523,3 +557,28 @@ class DynamicKick:
                 len(code.particles))
         else:
             return 0.*code.particles.x
+
+
+class DynamicIterableChannel:
+    '''
+    Utility class for channels between codes that have a variable number of grids
+    '''
+
+    def __init__ (self, from_iterator, to_iterator,
+            from_attributes=None, to_attributes=None):
+
+        self.from_iterator = from_iterator
+        self.to_iterator = to_iterator
+
+        self.from_attributes = from_attributes
+        self.to_attributes = to_attributes
+
+
+    def copy (self):
+
+        for from_grid, to_grid in zip(self.from_iterator(), self.to_iterator()):
+
+            temp_channel = from_grid.new_channel_to(to_grid, 
+                attributes=from_attributes, target_names=to_attributes)
+
+            temp_channel.copy()
