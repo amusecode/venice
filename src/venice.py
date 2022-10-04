@@ -114,10 +114,18 @@ class Venice:
         self.sync_data = None
         self._channels = None
 
+        self.save_data = []
+
         self.model_time = 0. | units.s
 
         self.interlaced_drift = False
         self.verbose = False
+
+        self.io_scheme = 0
+        self.filepath = './'
+        self._chk_counters = []
+        self._plt_counters = []
+        self._dbg_counters = []
 
 
     '''
@@ -164,6 +172,31 @@ class Venice:
         - update_timestep functions must be of the form update_timestep(code i,
           code j, previous time step)
         - the tree will be updated to accomodate the new timesteps
+
+    IO Strategy
+    - Venice handles IO through user-defined save_data functions. These are of the
+      form save_data(code i, filename). Filename will be defined by Venice, and
+      includes the path to the output directory. This string can be formatted 
+      through the 'code' and 'set' variable to differentiate between different 
+      codes and data sets within the code, e.g.:
+        write_set_to_file(code.gas_particles, filename.format(code='hydro', set=
+            'gas_particles')
+        write_set_to_file(code.dm_particles, filename.format(code='hydro', set=
+            'dm_particles')
+    - There are four (cumulative) levels of automated IO:
+        - 0: None
+            - No files are written by Venice, although codes can write internally,
+              and the final state is available through Venice itself.
+        - 1: Checkpoints
+            - Data is saved at the smallest time resolution where the entire system
+              is synchronized. In the connected component tree structure, this is
+              at the end of evolution of the highest node with more than one child.
+              This allows restarts.
+        - 2: Plot
+            - Data is saved at the end of evolution of every node with more than one
+              child. This prevents duplicates in tightly coupled branches.
+        - 3: Debug
+            - Data is saved at the end of every evolve call.
     '''
 
 
@@ -188,18 +221,21 @@ class Venice:
           if self._dynamic_timesteps:
               break
 
-        self._evolve_cc(self.root, dt, False)
+        self._evolve_cc(self.root, dt, False, 
+            len(self.root.children) > 1, len(self.root.children) > 1)
 
         self.model_time = end_time
 
 
-    def _evolve_cc (self, node, dt, reorganize):
+    def _evolve_cc (self, node, dt, reorganize, save_chk, save_plt):
         '''
         Evolve a node in the cc tree for a timestep
 
         node: cc tree node id to evolve (int)
         dt: timestep to evolve for (scalar, units of time)
         reorganize: flag to recompute tree structure from this node down (bool)
+        save_chk: flag to save checkpoint file (bool)
+        save_plt: flag to save plot file (bool)
         '''
 
         # Only update tree if:
@@ -222,7 +258,11 @@ class Venice:
         # RECURSIVE EVOLUTION
         for child1 in node.children:
             if child1.N_codes > 1:
-                self._evolve_cc(child1, dt/2., False)
+                self._evolve_cc(child1, dt/2., False, 
+                    # Save chk if in topmost, >1 child node, node of tree
+                    (len(child1.children)>1)*(child1.N_codes==len(self.root.codes)),
+                    # Save plt if in >1 child node, node of tree
+                     len(child1.children)>1)
                 for code_id in child1.code_ids:
                     for child2 in node.children:
                         if child1 != child2:
@@ -271,12 +311,34 @@ class Venice:
         # RECURSIVE EVOLUTION
         for child1 in node.children:
             if child1.N_codes > 1:
-                self._evolve_cc(child1, dt/2., True)
+                self._evolve_cc(child1, dt/2., True, 
+                    (len(child1.children) > 1) * \
+                    (child1.N_codes == len(self.root.codes)),
+                    len(child1.children) > 1)
                 for code_id in child1.code_ids:
                     for child2 in node.children:
                         if child1 != child2:
                             self._sync_code_to_codes(code_id, child2.code_ids)
                             self._copy_code_to_codes(code_id, child2.code_ids)
+
+
+        if self.io_scheme > 0 and save_chk:
+            for code_id in node.code_ids:
+                if self.save_data[code_id] is not None:
+                    self.save_state[code_id](self.codes[code_id], 
+                        self.filepath + '/chk_i{i:06}'.format(
+                            i=self._chk_counters[code_id]) + \
+                        '_{code}_{set}.venice')
+                    self._chk_counters[code_id] += 1
+
+        if self.io_scheme > 1 and save_plt:
+            for code_id in node.code_ids:
+                if self.save_data[code_id] is not None:
+                    self.save_state[code_id](self.codes[code_id], 
+                        self.filepath + '/plt_i{i:06}'.format(
+                            i=self._plt_counters[code_id]) + \
+                        '_{code}_{set}.venice')
+                    self._plt_counters[code_id] += 1
 
 
     def _evolve_interlaced (self, code_ids, dt):
@@ -294,11 +356,17 @@ class Venice:
         if N_codes == 1:
 
             if self.verbose:
-                print ("Evolving code {a} for {b} kyr".format(
+                print ("[I] Evolving code {a} for {b} kyr".format(
                     a=code_id, b=dt.value_in(units.kyr)))
 
             self.codes[code_ids[0]].evolve_model( 
                 self.codes[code_ids[0]].model_time + dt )
+            if self.io_scheme == 3 and self.save_data[code_ids[0]] is not None:
+                self.save_data[code_ids[0]](self.codes[code_ids[0]], 
+                    self.filepath + '/dbg_i{i:06}'.format(
+                        i=self._dbg_counters[code_ids[0]) + \
+                    '_{code}_{set}.venice')
+                self._dbg_counters[code_ids[0]] += 1
 
         else:
 
@@ -333,10 +401,16 @@ class Venice:
         for code_id in code_ids:
 
             if self.verbose:
-                print ("Evolving code {a} for {b} kyr".format(
+                print ("[L] Evolving code {a} for {b} kyr".format(
                     a=code_id, b=dt.value_in(units.kyr)))
 
             self.codes[code_id].evolve_model( self.codes[code_id].model_time + dt )
+            if self.io_scheme == 3 and self.save_data[code_id] is not None:
+                self.save_data[code_id](self.codes[code_id], 
+                    self.filepath + '/dbg_i{i:06}'.format(
+                        i=self._dbg_counters[code_id]) + \
+                    '_{code}_{set}.venice')
+                self._dbg_counters[code_id] += 1
             self._sync_code_to_codes(code_id, code_ids)
             self._copy_code_to_codes(code_id, code_ids)
 
@@ -455,6 +529,11 @@ class Venice:
 
 
         self.codes.append(code)
+
+        self.save_data.append(None)
+        self.chk_counters.append(1)
+        self.plt_counters.append(1)
+        self.dbg_counters.append(1)
 
 
         if N_codes > 0:
