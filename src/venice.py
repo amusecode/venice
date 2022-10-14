@@ -260,7 +260,8 @@ class Venice:
             if child1.N_codes > 1:
                 self._evolve_cc(child1, dt/2., False, 
                     # Save chk if in topmost, >1 child node, node of tree
-                    (len(child1.children)>1)*(child1.N_codes==len(self.root.codes)),
+                    (len(child1.children)>1) * \
+                    (child1.N_codes==len(self.root.code_ids)),
                     # Save plt if in >1 child node, node of tree
                      len(child1.children)>1)
                 for code_id in child1.code_ids:
@@ -313,7 +314,7 @@ class Venice:
             if child1.N_codes > 1:
                 self._evolve_cc(child1, dt/2., True, 
                     (len(child1.children) > 1) * \
-                    (child1.N_codes == len(self.root.codes)),
+                    (child1.N_codes == len(self.root.code_ids)),
                     len(child1.children) > 1)
                 for code_id in child1.code_ids:
                     for child2 in node.children:
@@ -364,7 +365,7 @@ class Venice:
             if self.io_scheme == 3 and self.save_data[code_ids[0]] is not None:
                 self.save_data[code_ids[0]](self.codes[code_ids[0]], 
                     self.filepath + '/dbg_i{i:06}'.format(
-                        i=self._dbg_counters[code_ids[0]) + \
+                        i=self._dbg_counters[code_ids[0]]) + \
                     '_{code}_{set}.venice')
                 self._dbg_counters[code_ids[0]] += 1
 
@@ -531,9 +532,9 @@ class Venice:
         self.codes.append(code)
 
         self.save_data.append(None)
-        self.chk_counters.append(1)
-        self.plt_counters.append(1)
-        self.dbg_counters.append(1)
+        self._chk_counters.append(1)
+        self._plt_counters.append(1)
+        self._dbg_counters.append(1)
 
 
         if N_codes > 0:
