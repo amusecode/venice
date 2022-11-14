@@ -36,10 +36,14 @@ class SymmetricMatrix (object):
 
 
     def __setitem__ (self, ind, data):
+        if len(ind) != 2:
+            print ("Matrix is 2D, but received {a} indices".format(a=len(ind)))
         self._storage[self._mapindex(ind[0],ind[1])] = data.value_in(self._unit)
 
 
     def __getitem__ (self, ind):
+        if len(ind) != 2:
+            print ("Matrix is 2D, but received {a} indices".format(a=len(ind)))
         return self._storage[self._mapindex(ind[0],ind[1])] | self._unit
 
 
