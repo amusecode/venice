@@ -57,10 +57,10 @@ class Venice:
 
         self.codes = []
 
-        self.timestep_matrix = None
+        self.timescale_matrix = None
 
         self.kick = None
-        self.update_timestep = None
+        self.update_timescale = None
         self.sync_data = None
         self._channels = None
 
@@ -84,8 +84,8 @@ class Venice:
         self.runtime_framework = 0.
         self.runtime_codes = []
 
-        self.record_timesteps = False
-        self.timesteps_codes = []
+        self.record_timescales = False
+        self.timescales_codes = []
 
 
     '''
@@ -95,12 +95,12 @@ class Venice:
     - Add codes
         - using add_code(code)
     - Define coupling times
-        - timestep_matrix[i,j] contains the maximum coupling timescale between codes
-            i and j
+        - timescale_matrix[i,j] contains the maximum coupling timescale between
+            codes i and j
         - the actual coupling timescale will be between 1 and 1/2 this value
         - if not defined (or set to <= 0), the coupling timescale is the total
             evolution time
-        - timestep_matrix is automatically symmetric
+        - timescale_matrix is automatically symmetric
     - Define channels
         - add_channel(i,j) adds a channel from a dataset of code i to one of code j
         - the default dataset is particles, but channels can be built between any
@@ -126,12 +126,11 @@ class Venice:
             changes made by code i
         - sync_data functions must be of the form sync_data(code i, code j)
         - this concerns e.g. added/removed particles and (de)refined grids
-    - Define timestep updaters
-        - update_timestep[i][j] computes the coupling timestep of codes i and j
+    - Define timescale updaters
+        - update_timescale[i][j] computes the coupling timescale of codes i and j
           during evolution, must return a scalar with units of time
-        - update_timestep functions must be of the form update_timestep(code i,
+        - update_timescale functions must be of the form update_timescale(code i,
           code j, previous time step)
-        - the tree will be updated to accomodate the new timesteps
 
     IO Strategy
     - Venice handles IO through user-defined save_data functions. These are of the
@@ -195,18 +194,17 @@ class Venice:
         dt: timestep to evolve for (scalar, units of time)
         '''
 
-        # UPDATE TIMESTEPS
+        # UPDATE TIMESCALES
         for code_id1 in code_ids:
           for code_id2 in code_ids:
-              if self.update_timestep[code_id1][code_id2] is not None:
-                  self.timestep_matrix[code_id1, code_id2] = \
-                      self.update_timestep[code_id1][code_id2](
+              if self.update_timescale[code_id1][code_id2] is not None:
+                  self.timescale_matrix[code_id1, code_id2] = \
+                      self.update_timescale[code_id1][code_id2](
                           self.codes[code_id1], self.codes[code_id2], dt)
-
 
         # FIND CONNECTED COMPONENTS
         component_ids = find_connected_components(code_ids, dt,
-            self.timestep_matrix)
+            self.timescale_matrix)
 
         CCs = [ [] for _ in range(np.max(component_ids)+1) ]
         for i in range(len(code_ids)):
@@ -271,16 +269,16 @@ class Venice:
                     self._copy_code_to_codes(code_ids[j], code_ids)
 
 
-        # RECURSIVE EVOLUTION
-        if len(CC):
-            if self.cc_order == 1:
-                self._evolve_split_cc_1st_order(CC, dt/2.)
-            elif self.cc_order == 2:
-                self._evolve_split_cc_2nd_order(CC, dt/2.)
-            else:
-                print ("[CC] Order {a} CC splitting is not implemented!".format(
-                    a=self.cc_order))
-                return
+        # UPDATE TIMESCALES
+        for i in range(len(CCs)):
+            for j in range(len(CCs)):
+                if i != j:
+                    for code_id1 in CCs[i]:
+                      for code_id2 in CCs[j]:
+                          if self.update_timescale[code_id1][code_id2] is not None:
+                              self.timescale_matrix[code_id1, code_id2] = \
+                                  self.update_timescale[code_id1][code_id2](
+                                     self.codes[code_id1], self.codes[code_id2], dt)
 
 
         # SAVE CHECKPOINT FILE
@@ -368,8 +366,8 @@ class Venice:
             end = time.time()
             self.runtime_codes[code_id] += end - start
 
-        if self.record_timesteps:
-            self.timesteps_codes[code_id].append(dt)
+        if self.record_timescales:
+            self.timescales_codes[code_id].append(dt)
 
         if self.io_scheme == 3 and self.save_data[code_id] is not None:
             self.save_data[code_id](self.codes[code_id], 
@@ -557,35 +555,35 @@ class Venice:
         self._dbg_counters.append(1)
 
         self.runtime_codes.append(0)
-        self.timesteps_codes.append([]|units.kyr)
+        self.timescales_codes.append([]|units.kyr)
 
 
         if N_codes > 0:
             for i in range(N_codes):
                 self.kick[i].append(None)
-                self.update_timestep[i].append(None)
+                self.update_timescale[i].append(None)
                 self.sync_data[i].append(None)
                 self._channels[i].append([])
 
             self.kick.append([ None for _ in range(N_codes+1) ])
-            self.update_timestep.append([ None for _ in range(N_codes+1) ])
+            self.update_timescale.append([ None for _ in range(N_codes+1) ])
             self.sync_data.append([ None for _ in range(N_codes+1) ])
             self._channels.append([ [] for _ in range(N_codes+1) ])
 
 
-            new_timestep_matrix = SymmetricMatrix(N_codes+1, units.s)
+            new_timescale_matrix = SymmetricMatrix(N_codes+1, units.s)
             for i in range(N_codes):
                 for j in range(i+1,N_codes):
-                    new_timestep_matrix[i,j] = self.timestep_matrix[i,j]
-            self.timestep_matrix = new_timestep_matrix
+                    new_timescale_matrix[i,j] = self.timescale_matrix[i,j]
+            self.timescale_matrix = new_timescale_matrix
 
         else:
             self.kick = [[None]]
-            self.update_timestep = [[None]]
+            self.update_timescale = [[None]]
             self.sync_data = [[None]]
             self._channels = [[[]]]
 
-            self.timestep_matrix = SymmetricMatrix(1, units.s)
+            self.timescale_matrix = SymmetricMatrix(1, units.s)
 
 
     def stop (self):
@@ -645,13 +643,19 @@ class DynamicKick:
         dt: timestep to kick for (scalar, units of time)
         '''
 
-        ax, ay, az = kicker.get_gravity_at_point(
-            self._softening_lengths(kickee),
-            kickee.particles.x, kickee.particles.y, kickee.particles.z)
+        kickee_particles = kickee.particles.copy(
+            filter_attributes=lambda p, attribute_name: \
+                attribute_name in ['mass', 'x', 'y', 'z', 'vx', 'vy', 'vz'])
 
-        kickee.particles.vx += ax * dt
-        kickee.particles.vy += ay * dt
-        kickee.particles.vz += az * dt
+        ax, ay, az = kicker.get_gravity_at_point(self._softening_lengths(kickee),
+            kickee_particles.x, kickee_particles.y, kickee_particles.z)
+
+        kickee_particles.vx += ax * dt
+        kickee_particles.vy += ay * dt
+        kickee_particles.vz += az * dt
+
+        channel = kickee_particles.new_channel_to(kickee.particles)
+        channel.copy_attributes(['vx', 'vy', 'vz'])
 
 
     def _softening_lengths (self, code):
@@ -659,7 +663,7 @@ class DynamicKick:
             return code.particles.radius
         elif self.h_smooth_is_eps:
             return code.particles.h_smooth
-        elif zero_smoothing:
+        elif self.zero_smoothing:
             return 0.*code.particles.x
         elif hasattr(code, 'parameters') and hasattr(code.parameters, 
                 'epsilon_squared'):

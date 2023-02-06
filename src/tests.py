@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from venice import Venice
+from venice import Venice, dynamic_kick
 
 from amuse.units import units, constants, nbody_system
 from amuse.datamodel import Particles
@@ -31,7 +31,7 @@ def make_cluster (N, R):
     return cluster
 
 
-def make_gravity_stellar (converter, timestep, verbose=False):
+def make_gravity_stellar (converter, timescale, verbose=False):
 
     stellar = SeBa()
 
@@ -47,13 +47,13 @@ def make_gravity_stellar (converter, timestep, verbose=False):
     system.add_code(gravity)
 
     system.add_channel(0, 1, from_attributes=['mass'], to_attributes=['mass'])
-    system.timestep_matrix[0,1] = timestep
+    system.timescale_matrix[0,1] = timescale
 
 
     return stellar, gravity, system
 
 
-def test_linear_vs_interlaced (N, R, timesteps, end_time):
+def test_linear_vs_interlaced (N, R, timescales, end_time):
 
     cluster_l = make_cluster(N, R)
     cluster_i = cluster_l.copy()
@@ -65,13 +65,13 @@ def test_linear_vs_interlaced (N, R, timesteps, end_time):
     ax = fig.add_subplot(111)
 
 
-    for i in range(len(timesteps)):
+    for i in range(len(timescales)):
 
         cluster_l_copy = cluster_l.copy()
         cluster_i_copy = cluster_i.copy()
 
         stellar_l, gravity_l, system_l = make_gravity_stellar(converter, 
-            timesteps[i])
+            timescales[i])
 
         stellar_l.particles.add_particles(cluster_l_copy)
         gravity_l.particles.add_particles(cluster_l_copy)
@@ -79,7 +79,7 @@ def test_linear_vs_interlaced (N, R, timesteps, end_time):
 
 
         stellar_i, gravity_i, system_i = make_gravity_stellar(converter,
-            timesteps[i])
+            timescales[i])
         system_i.interlaced_drift = True
 
         stellar_i.particles.add_particles(cluster_i_copy)
@@ -111,7 +111,7 @@ def test_linear_vs_interlaced (N, R, timesteps, end_time):
 
         ax.plot((bins_r[1:] + bins_r[:-1])/2., hist_r, 
             drawstyle='steps-mid', c='C'+str(i),
-            label=timesteps[i].value_in(units.kyr))
+            label=timescales[i].value_in(units.kyr))
         ax.plot((bins_v[1:] + bins_v[:-1])/2., hist_v, 
             drawstyle='steps-mid', c='C'+str(i), linestyle='--')
 
@@ -121,7 +121,7 @@ def test_linear_vs_interlaced (N, R, timesteps, end_time):
     ax.legend()
 
 
-def test_convergence (N, R, timesteps, end_time):
+def test_convergence (N, R, timescales, end_time):
 
     cluster = make_cluster(N, R)
 
@@ -132,12 +132,12 @@ def test_convergence (N, R, timesteps, end_time):
     ax = fig.add_subplot(111)
 
 
-    for i in range(len(timesteps)):
+    for i in range(len(timescales)):
 
         cluster_copy = cluster.copy()
 
         stellar, gravity, system = make_gravity_stellar(converter, 
-            timesteps[i])
+            timescales[i])
 
         stellar.particles.add_particles(cluster_copy)
         gravity.particles.add_particles(cluster_copy)
@@ -149,10 +149,10 @@ def test_convergence (N, R, timesteps, end_time):
         end = time.time()
         channel.copy()
         system.stop()
-        print (timesteps[i], end-start)
+        print (timescales[i], end-start)
 
 
-        ax.scatter([timesteps[i].value_in(units.yr)],
+        ax.scatter([timescales[i].value_in(units.yr)],
             [cluster_copy.virial_radius().value_in(units.pc)], c='C0')
 
     ax.set_ylim(1e0, 1e1)
@@ -169,12 +169,57 @@ if __name__ == '__main__':
     N = 100
     R = 3. | units.pc
 
-    timesteps = [3., 1., 0.3, 0.1, 0.03, 0.01, 0.003, 0.001] | units.kyr
-    end_time = 10. | units.kyr
+    cluster = make_cluster(N, R)
 
-    test_linear_vs_interlaced (N, R, timesteps[:4], end_time)
+    converter = nbody_system.nbody_to_si(cluster.mass.sum(), R)
+    stellar, gravity, system = make_gravity_stellar (converter, 1.|units.kyr,
+        verbose=True)
+    system.rest_order = 2
+    system.cc_order = 2
 
-    test_convergence (N, R, timesteps[:4], end_time)
+    gravity2 = ph4(converter)
+    gravity2.parameters.force_sync = True
+    gravity2.particles.add_particles(
+        Particles(1,
+            mass=1.|units.MSun,
+            x=100.|units.pc,
+            y=000.|units.pc,
+            z=000.|units.pc,
+            vx=0.|units.kms,
+            vy=(constants.G*cluster.mass.sum()/(100.|units.pc))**0.5,
+            vz=0.|units.kms,
+        ))
+
+    system.add_code(gravity2)
+    system.kick[1][2] = dynamic_kick
+    system.timescale_matrix[1,2] = 0.125 | units.kyr
+
+    stellar2 = SeBa()
+    stellar2.particles.add_particles(gravity2.particles.copy())
+
+    system.add_code(stellar2)
+    system.timescale_matrix[2,3] = 1. | units.kyr
+    system.timescale_matrix[0,3] = 0.5 | units.kyr
+    system.add_channel(3, 2, from_attributes=['mass'], to_attributes=['mass'])
+
+    gravity.particles.add_particles(cluster)
+    stellar.particles.add_particles(cluster)
+
+    system.evolve_model(2.|units.kyr)
+
+    #timescales = [3., 1., 0.3, 0.1, 0.03, 0.01, 0.003, 0.001] | units.kyr
+    #end_time = 10. | units.kyr
+
+    #test_linear_vs_interlaced (N, R, timescales[:4], end_time)
+
+    #test_convergence (N, R, timescales[:4], end_time)
+
+    print ([ code.model_time.value_in(units.kyr) for code in system.codes ])
+
+    for i in range(4):
+        print ([ system._channels[i][j] for j in range(4) ])
+
+    #system.root.print_node()
 
     plt.show()
 

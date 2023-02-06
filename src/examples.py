@@ -12,7 +12,8 @@ from amuse.community.sse.interface import SSE
 from amuse.community.ph4.interface import ph4
 
 
-def gravity_stellar (gravity_code, stellar_code, converter, timestep, verbose=False):
+def gravity_stellar (gravity_code, stellar_code, converter, timescale,
+        verbose=False):
     '''
     Create a Venice system coupling a gravity code to a stellar evolution code,
     where the mass change due to stellar evolution is propagated to gravity
@@ -37,14 +38,14 @@ def gravity_stellar (gravity_code, stellar_code, converter, timestep, verbose=Fa
     # Add channel from code 1 (stellar) to code 0 (gravity), copying mass
     system.add_channel(1, 0, from_attributes=['mass'], to_attributes=['mass'])
 
-    # Set coupling timestep between codes 0 and 1
+    # Set coupling timescale between codes 0 and 1
     # Matrix is symmetric, so no need to do [1,0]
-    system.timestep_matrix[0,1] = timestep
+    system.timescale_matrix[0,1] = timescale
 
     return system, gravity, stellar
 
 
-def bridge_to_potential (gravity_code, potential, converter, timestep,
+def bridge_to_potential (gravity_code, potential, converter, timescale,
         verbose=False):
     '''
     Create a Venice system coupling a gravity code to a background potential using a
@@ -67,8 +68,8 @@ def bridge_to_potential (gravity_code, potential, converter, timestep,
     # Add classic bridge kick from code 1 (potential) to code 0 (gravity)
     system.kick[1][0] = dynamic_kick
 
-    # Set coupling timestep between codes 0 and 1
+    # Set coupling timescale between codes 0 and 1
     # Matrix is symmetric, so no need to do [1,0]
-    system.timestep_matrix[0,1] = timestep
+    system.timescale_matrix[0,1] = timescale
 
     return system, gravity

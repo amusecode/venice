@@ -167,7 +167,7 @@ class TypeIMigration:
             ((1e-10 | units.MSun/units.yr)/self.Mg_dot)**(2./7.) | units.AU
 
 
-def setup_single_pps (timestep, verbose=False):
+def setup_single_pps (timescale, verbose=False):
 
     # Initiate Venice
     system = Venice()
@@ -181,8 +181,8 @@ def setup_single_pps (timestep, verbose=False):
     system.add_code(pebble_accretion)
     system.add_code(typeI_migration)
 
-    # Set coupling timestep; matrix is symmetric, so no need to set [1,0]
-    system.timestep_matrix[0,1] = timestep
+    # Set coupling timescale; matrix is symmetric, so no need to set [1,0]
+    system.timescale_matrix[0,1] = timescale
 
     # Add channels
     # PebbleAccretion informs TypeIMigration of updated mass
