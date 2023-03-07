@@ -171,6 +171,14 @@ class Venice:
 
         dt = end_time - self.model_time
 
+        # INITIAL COUPLING TIMESCALES
+        for i in range(len(self.codes)):
+            for j in range(len(self.codes)):
+                if self.update_timescale[i][j] is not None:
+                    self.timescale_matrix[i,j] = \
+                        self.update_timescale[i][j](
+                            self.codes[i], self.codes[j], dt)
+
         self._evolve_cc(np.arange(len(self.codes)), dt)
 
         self.model_time = end_time
@@ -193,14 +201,6 @@ class Venice:
         code_ids: code ids to evolve (list of ints)
         dt: timestep to evolve for (scalar, units of time)
         '''
-
-        # UPDATE TIMESCALES
-        for code_id1 in code_ids:
-          for code_id2 in code_ids:
-              if self.update_timescale[code_id1][code_id2] is not None:
-                  self.timescale_matrix[code_id1, code_id2] = \
-                      self.update_timescale[code_id1][code_id2](
-                          self.codes[code_id1], self.codes[code_id2], dt)
 
         # FIND CONNECTED COMPONENTS
         component_ids = find_connected_components(code_ids, dt,
@@ -269,16 +269,29 @@ class Venice:
                     self._copy_code_to_codes(code_ids[j], code_ids)
 
 
+        # RECURSIVE EVOLUTION
+        if len(CC):
+            if self.cc_order == 1:
+                self._evolve_split_cc_1st_order(CC, dt/2.)
+            elif self.cc_order == 2:
+                self._evolve_split_cc_2nd_order(CC, dt/2.)
+            else:
+                print ("[CC] Order {a} CC splitting is not implemented!".format(
+                    a=self.cc_order))
+                return
+
+
         # UPDATE TIMESCALES
-        for i in range(len(CCs)):
-            for j in range(len(CCs)):
-                if i != j:
-                    for code_id1 in CCs[i]:
-                      for code_id2 in CCs[j]:
-                          if self.update_timescale[code_id1][code_id2] is not None:
-                              self.timescale_matrix[code_id1, code_id2] = \
-                                  self.update_timescale[code_id1][code_id2](
-                                     self.codes[code_id1], self.codes[code_id2], dt)
+        if len(CCs) > 1: 
+            # if all codes are in 1 CC, nothing changes at this timestep,
+            # and recomputing timescales is redundant
+            for code_id1 in code_ids:
+              for code_id2 in code_ids:
+                if self.update_timescale[code_id1][code_id2] is not None:
+                    self.timescale_matrix[code_id1, code_id2] = \
+                        self.update_timescale[code_id1][code_id2](
+                            self.codes[code_id1], self.codes[code_id2], 
+                            self.timescale_matrix[code_id1, code_id2])
 
 
         # SAVE CHECKPOINT FILE
