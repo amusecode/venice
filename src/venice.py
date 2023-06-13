@@ -3,6 +3,7 @@ import numpy as np
 import time
 
 from amuse.units import units
+from amuse.io import write_set_to_file
 
 from symmetric_matrix import SymmetricMatrix
 
@@ -136,12 +137,12 @@ class Venice:
     - Venice handles IO through user-defined save_data functions. These are of the
       form save_data(code i, filename). Filename will be defined by Venice, and
       includes the path to the output directory. This string can be formatted 
-      through the 'code' and 'set' variable to differentiate between different 
-      codes and data sets within the code, e.g.:
-        write_set_to_file(code.gas_particles, filename.format(code='hydro', set=
-            'gas_particles')
-        write_set_to_file(code.dm_particles, filename.format(code='hydro', set=
-            'dm_particles')
+      through the 'code_label' and 'set_label' variable to differentiate between 
+      different codes and data sets within the code, e.g.:
+        write_set_to_file(code.gas_particles, filename.format(code_label='hydro', 
+            set_label='gas_particles')
+        write_set_to_file(code.dm_particles, filename.format(code_label='hydro', 
+            set_label='dm_particles')
     - There are four (cumulative) levels of automated IO:
         - 0: None
             - No files are written by Venice, although codes can write internally,
@@ -191,7 +192,7 @@ class Venice:
         if self.verbose:
             print ("Relative errors in model time:", 
                 abs(([ code.model_time.value_in(units.Myr) for code in \
-                self.codes ]|units.Myr) - self.model_time)/self.model_time)
+                self.codes if hasattr(code, 'model_time') ]|units.Myr) - self.model_time)/self.model_time)
 
 
     def _evolve_cc (self, code_ids, dt):
@@ -297,24 +298,22 @@ class Venice:
         # SAVE CHECKPOINT FILE
         if self.io_scheme > 0 and len(CCs) > 1 and \
                 len(code_ids) == len(self.codes):
-            for code_id in code_ids:
-                if self.save_data[code_id] is not None:
-                    self.save_data[code_id](self.codes[code_id], 
-                        self.filepath + '/chk_i{i:06}'.format(
-                            i=self._chk_counters[code_id]) + \
-                        '_{code}_{set}.venice')
-                    self._chk_counters[code_id] += 1
+            for i in range(len(code_ids)):
+                if self.save_data[code_ids[i]] is not None:
+                    self.save_data[code_ids[i]](self.codes[code_ids[i]], 
+                        self.filepath + '/chk_{code_label}_{set_label}' + \
+                            '_i{a:06}.venice'.format(a=self._chk_counters[code_ids[i]]))
+                    self._chk_counters[code_ids[i]] += 1
 
 
         # SAVE PLOT FILE
         if self.io_scheme > 1 and len(CCs) > 1:
-            for code_id in code_ids:
-                if self.save_data[code_id] is not None:
-                    self.save_data[code_id](self.codes[code_id], 
-                        self.filepath + '/plt_i{i:06}'.format(
-                            i=self._plt_counters[code_id]) + \
-                        '_{code}_{set}.venice')
-                    self._plt_counters[code_id] += 1
+            for i in range(len(code_ids)):
+                if self.save_data[code_ids[i]] is not None and len(CCs[component_ids[i]]) == 1:
+                    self.save_data[code_ids[i]](self.codes[code_ids[i]], 
+                        self.filepath + '/plt_{code_label}_{set_label}' + \
+                            '_i{a:06}.venice'.format(a=self._plt_counters[code_ids[i]]))
+                    self._plt_counters[code_ids[i]] += 1
 
 
     def _evolve_codes_1st_order (self, code_ids, dt):
@@ -367,7 +366,7 @@ class Venice:
 
         if self.verbose:
             print ("Evolving code {a} for {b} kyr".format(
-                a=code_id, b=dt.value_in(units.kyr)))
+                a=code_id, b=dt.value_in(units.kyr)), flush=True)
 
         if self.record_runtime:
             start = time.time()
@@ -384,9 +383,8 @@ class Venice:
 
         if self.io_scheme == 3 and self.save_data[code_id] is not None:
             self.save_data[code_id](self.codes[code_id], 
-                self.filepath + '/dbg_i{a:06}'.format(
-                    a=self._dbg_counters[code_id]) + \
-                '_{code}_{set}.venice')
+                self.filepath + '/dbg_{code_label}_{set_label}' + \
+                    '_i{a:06}.venice'.format(a=self._dbg_counters[code_id]))
             self._dbg_counters[code_id] += 1
 
         self._sync_code_to_codes(code_id, coupled_code_ids)
@@ -624,7 +622,7 @@ def dynamic_kick (kicker, kickee, dt):
         filter_attributes=lambda p, attribute_name: \
             attribute_name in ['mass', 'x', 'y', 'z', 'vx', 'vy', 'vz'])
 
-    ax, ay, az = kicker.get_gravity_at_point(0. | kicker.particles.position.unit,
+    ax, ay, az = kicker.get_gravity_at_point(0. | kickee.particles.position.unit,
         kickee_particles.x, kickee_particles.y, kickee_particles.z)
 
     kickee_particles.vx += ax * dt
@@ -709,3 +707,10 @@ class DynamicIterableChannel:
                 attributes=from_attributes, target_names=to_attributes)
 
             temp_channel.copy()
+
+
+def write_set_to_amuse_file (code, filename, code_label, set_label='particles'):
+
+    write_set_to_file(getattr(code, set_label),
+        filename.format(code_label=code_label, set_label=set_label), 
+        'hdf5', overwrite_file=True, timestamp=code.model_time)
