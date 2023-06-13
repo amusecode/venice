@@ -11,3 +11,5 @@ Those three elements define a functional system, but it has a couple of addition
 - Kick functions can let one code impact another (the classical Bridge interaction is an example of this).
 - Data sets can be manipulated on the fly; if one code generates or deletes particles, this can be communicated to another code.
 - Coupling timesteps can be changed dynamically during evolution. 
+
+The figures in the Venice paper can be reproduced using the paper\_{model}.py scripts; the generate\_paper\_figures.csh script runs them all in the correct order. Note that by default its files (which are a lot) are written within the repository's directory.
