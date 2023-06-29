@@ -213,7 +213,8 @@ def plot_combined_model (filepath):
         filepath + '/combined_s1_p1/'
     ]
 
-    N_panels = 1
+    colors = ['C0', 'C1', 'C3', 'C7']
+    markers = ['o', 'x', '^', 'v']
 
     figs = [ plt.figure(), plt.figure(figsize=(12.8, 4.8)), plt.figure(), plt.figure(figsize=(6.4, 9.6)) ]
     ax1 = figs[0].add_subplot(111)
@@ -251,13 +252,11 @@ def plot_combined_model (filepath):
     ax2b.set_xlim(-10., 10.)
     ax2b.set_ylim(-10., 10.)
 
-    ax2a.plot([0.], [0.], c='k', label='perturbers')
-    ax2a.legend(loc='upper right', frameon=False)
 
-    ax2b.scatter([-100.], [-100.], c='C0', label='None')#, s=1.)
-    ax2b.scatter([-100.], [-100.], c='C1', label='Stellar')#, s=1.)
-    ax2b.scatter([-100.], [-100.], c='C2', label='Perturbers')#, s=1.)
-    ax2b.scatter([-100.], [-100.], c='C3', label='Both')#, s=1.)
+    ax2b.scatter([-100.], [-100.], c=colors[0], label='None', s=10., marker=markers[0])
+    ax2b.scatter([-100.], [-100.], c=colors[1], label='Stellar', s=10., marker=markers[1])
+    ax2b.scatter([-100.], [-100.], c=colors[2], label='Perturbers', s=10., marker=markers[2])
+    ax2b.scatter([-100.], [-100.], c=colors[3], label='Both', s=10., marker=markers[3])
     ax2b.legend(loc='upper left', frameon=False)
 
     ax2a.xaxis.set_minor_locator(tck.MultipleLocator(10.))
@@ -269,10 +268,10 @@ def plot_combined_model (filepath):
     ax3.set_xlabel('$\\phi$ [rad]')
     ax3.set_ylabel('N')
 
-    ax3.plot([0.], [0.], label='None', c='C0')
-    ax3.plot([0.], [0.], label='Stellar', c='C1')
-    ax3.plot([0.], [0.], label='Perturbers', c='C2')
-    ax3.plot([0.], [0.], label='Both', c='C3')
+    ax3.plot([0.], [0.], label='None', c=colors[0])
+    ax3.plot([0.], [0.], label='Stellar', c=colors[1])
+    ax3.plot([0.], [0.], label='Perturbers', c=colors[2])
+    ax3.plot([0.], [0.], label='Both', c=colors[3])
 
     ax3.legend(frameon=False)
 
@@ -282,10 +281,10 @@ def plot_combined_model (filepath):
 
     ax4a.set_yscale('log')
 
-    ax4a.plot([-100.], [-100.], c='C0', label='None')
-    ax4a.plot([-100.], [-100.], c='C1', label='Stellar')
-    ax4a.plot([-100.], [-100.], c='C2', label='Perturbers')
-    ax4a.plot([-100.], [-100.], c='C3', label='Both')
+    ax4a.plot([-100.], [-100.], c=colors[0], label='None')
+    ax4a.plot([-100.], [-100.], c=colors[1], label='Stellar')
+    ax4a.plot([-100.], [-100.], c=colors[2], label='Perturbers')
+    ax4a.plot([-100.], [-100.], c=colors[3], label='Both')
     ax4a.legend(loc='upper left', frameon=False)
 
     ax4a.set_xlim(0., 5000.)
@@ -305,7 +304,6 @@ def plot_combined_model (filepath):
 
         files = os.listdir(filepaths[i])
 
-        #*(int(filename.split('_')[3][1:-7])%30 == 0)
         cluster_files = list(filter(lambda filename: (filename.split('_')[0] == 'plt')*(filename.split('_')[1] == 'cluster'), files))
         cluster_files.sort(key=lambda filename: filename.split('_')[3][1:])
 
@@ -328,24 +326,19 @@ def plot_combined_model (filepath):
                 dphi[j] = np.std(phi)
 
             if i == 3:
-                ax1.plot(time[1:].value_in(units.Myr), np.diff(time.value_in(units.yr)), ds='steps-pre', ls='--', c='C'+str(i))
+                ax1.plot(time[1:].value_in(units.Myr), np.diff(time.value_in(units.yr)), ds='steps-pre', ls='--', c=colors[i])
 
-            ax2a.scatter(particles.x.value_in(units.kpc), particles.y.value_in(units.kpc), s=1., c='C'+str(i))
-            ax2b.scatter(particles.x.value_in(units.kpc), particles.y.value_in(units.kpc), s=1., c='C'+str(i))
+            ax2a.scatter(particles.x.value_in(units.kpc), particles.y.value_in(units.kpc), s=10., c=colors[i], marker=markers[i])
+            ax2b.scatter(particles.x.value_in(units.kpc), particles.y.value_in(units.kpc), s=10., c=colors[i], marker=markers[i])
 
             phi = np.arctan2(particles.y.value_in(units.kpc), particles.x.value_in(units.kpc))
             kde = ss.gaussian_kde(phi)
             bins = np.linspace(-1., 1., num=300)*np.pi
-            ax3.plot(bins, kde(bins), c='C'+str(i))
-            #ax3.hist(phi, 
-            #    bins=np.linspace(-1., 1., num=30)*np.pi, histtype='step', color='C'+str(i))
-            #ax3.axvline(np.quantile(phi, 0.16), color='C'+str(i), linestyle='-.')
-            #ax3.axvline(np.quantile(phi, 0.50), color='C'+str(i), linestyle='--')
-            #ax3.axvline(np.quantile(phi, 0.84), color='C'+str(i), linestyle='-.')
+            ax3.plot(bins, kde(bins), c=colors[i])
             print (np.std(phi))
 
-            ax4a.plot(time.value_in(units.Myr), dR, c='C'+str(i))
-            ax4b.plot(time.value_in(units.Myr), dphi, c='C'+str(i))
+            ax4a.plot(time.value_in(units.Myr), dR, c=colors[i])
+            ax4b.plot(time.value_in(units.Myr), dphi, c=colors[i])
 
             print (filepaths[i], "cluster", flush=True)
 
@@ -365,7 +358,7 @@ def plot_combined_model (filepath):
                 R_perturbers[j] = particles.position
 
             if i == 3:
-                ax1.plot(time[1:].value_in(units.Myr), np.diff(time.value_in(units.yr)), ds='steps-pre', ls='-.', c='C'+str(i))
+                ax1.plot(time[1:].value_in(units.Myr), np.diff(time.value_in(units.yr)), ds='steps-pre', ls='-.', c=colors[i])
 
             ax2a.plot(R_perturbers[:,0,0].value_in(units.kpc), R_perturbers[:,0,1].value_in(units.kpc), c='k', ls='--')
             ax2a.plot(R_perturbers[:,1,0].value_in(units.kpc), R_perturbers[:,1,1].value_in(units.kpc), c='k', ls=':')
@@ -386,7 +379,7 @@ def plot_combined_model (filepath):
                 time[j] = particles.get_timestamp()
 
             if i == 3:
-                ax1.plot(time[1:].value_in(units.Myr), np.diff(time.value_in(units.yr)), ds='steps-pre', ls=':', c='C'+str(i))
+                ax1.plot(time[1:].value_in(units.Myr), np.diff(time.value_in(units.yr)), ds='steps-pre', ls=':', c=colors[i])
 
             print (filepaths[i], "stellar", flush=True)
 
@@ -423,8 +416,7 @@ if __name__ == '__main__':
         'end_time': 5000. | units.Myr,
         'output_path': args.filepath + '/combined_s{a}_p{b}/'.format(
             a='1' if args.stellar_evolution else '0',
-            b='1' if args.perturbers else '0'),
-        #'eps_galaxy': 1. | units.pc,
+            b='1' if args.perturbers else '0')
         'eta_gravity': 0.03,
         'eta_stellar': 0.3,
         'N_cluster': 100,
@@ -440,7 +432,7 @@ if __name__ == '__main__':
     if args.perturbers:
         params['perturbers'] = perturbers
 
-    #run_combined_model(params)
+    run_combined_model(params)
 
     if args.perturbers and args.stellar_evolution:
         plot_combined_model(args.filepath)
